@@ -123,35 +123,6 @@ class CatalogCbers4a(QObject):
         self.requestSearch = QNetworkRequest( url )
         self.requestSearch.setHeader( QNetworkRequest.ContentTypeHeader, 'application/json' )
 
-    def _search(self):
-        def getData():
-            def getBbox():
-                e = self.mapCanvas.extent()
-                crs = self.mapCanvas.mapSettings().destinationCrs()
-                if not self.CRS == crs:
-                    ct = QgsCoordinateTransform( crs, self.CRS, self.project )
-                    e = ct.transform( e )
-                return [ e.xMinimum(), e.yMinimum(), e.xMaximum(), e.yMaximum() ]
-                
-            v_datetime = f"{self.requestData['date1']}T00:00:00/{self.requestData['date2']}T00:00:00"
-            d_json = {
-                'bbox': getBbox(),
-                'collections': [ self.requestData['item_type'] ],
-                'query': { "cloud_cover": {"lte": self.requestData['cloud_cover']} },
-                'limit': self.LIMIT,
-                'datetime': v_datetime
-            }
-            s_json = json.dumps( d_json )
-            return s_json.encode()
-
-        req = QgsBlockingNetworkRequest()
-        err = req.post( self.requestSearch, getData() )
-        if err > 0:
-            return { 'isOk': False, 'message': req.errorMessage() }
-        r = req.reply()
-        c = r.content()
-        d_json = json.loads( c.data() )
-        return { 'isOk': True, 'json': d_json }
         
     def _create(self):
         l_fields = [ f"field={k}:{v}" for k,v in self.FIELDSDEF.items() ]
@@ -168,46 +139,96 @@ class CatalogCbers4a(QObject):
         #self.menuCatalog.setLayer( self.catalog )
         self.catalog_id = self.catalog.id()
 
-    def _populate(self, json_features):
-        def getGeometry(json_geometry):
-            def getPolygonPoints(coordinates):
-                polylines = []
-                for line in coordinates:
-                    polyline = [ QgsPointXY( p[0], p[1] ) for p in line ]
-                    polylines.append( polyline )
-                return polylines
+    def _populate(self, existsCatalog):
+        def addFeatures(json_features):
+            def getGeometry(json_geometry):
+                def getPolygonPoints(coordinates):
+                    polylines = []
+                    for line in coordinates:
+                        polyline = [ QgsPointXY( p[0], p[1] ) for p in line ]
+                        polylines.append( polyline )
+                    return polylines
 
-            if json_geometry['type'] == 'Polygon':
-                polygon = getPolygonPoints( json_geometry['coordinates'] )
-                return QgsGeometry.fromMultiPolygonXY( [ polygon ] )
-            elif json_geometry['type'] == 'MultiPolygon':
-                polygons= []
-                for polygon in geometry['coordinates']:
-                    polygons.append( getPolygonPoints( polygon ) )
-                return QgsGeometry.fromMultiPolygonXY( polygons )
+                if json_geometry['type'] == 'Polygon':
+                    polygon = getPolygonPoints( json_geometry['coordinates'] )
+                    return QgsGeometry.fromMultiPolygonXY( [ polygon ] )
+                elif json_geometry['type'] == 'MultiPolygon':
+                    polygons= []
+                    for polygon in geometry['coordinates']:
+                        polygons.append( getPolygonPoints( polygon ) )
+                    return QgsGeometry.fromMultiPolygonXY( polygons )
 
-            else:
-                None
+                else:
+                    None
 
-        provider = self.catalog.dataProvider()
-        for feat in json_features:
-            f =  { }
-            f['item_id'] = feat['id']
-            f['date_time'] = feat['properties']['datetime']
-            meta_json = {
-                'path': feat['properties']['path'],
-                'row': feat['properties']['row'],
-                'cloud_cover': feat['properties']['cloud_cover'],
-                'assets': feat['assets'].copy()
-            }
-            f['meta_json'] = json.dumps( meta_json )
-            f['meta_jsize'] = len( f['meta_json'] )
-            atts = [ f[k] for k in self.FIELDSDEF ]
-            qfeat = QgsFeature()
-            qfeat.setAttributes( atts )
-            g = getGeometry( feat['geometry'])
-            if not g is None: qfeat.setGeometry( g )
-            provider.addFeature( qfeat )
+            provider = self.catalog.dataProvider()
+            for feat in json_features:
+                f =  { }
+                f['item_id'] = feat['id']
+                f['date_time'] = feat['properties']['datetime']
+                meta_json = {
+                    'path': feat['properties']['path'],
+                    'row': feat['properties']['row'],
+                    'cloud_cover': feat['properties']['cloud_cover'],
+                    'assets': feat['assets'].copy()
+                }
+                f['meta_json'] = json.dumps( meta_json )
+                f['meta_jsize'] = len( f['meta_json'] )
+                atts = [ f[k] for k in self.FIELDSDEF ]
+                qfeat = QgsFeature()
+                qfeat.setAttributes( atts )
+                g = getGeometry( feat['geometry'])
+                if not g is None: qfeat.setGeometry( g )
+                provider.addFeature( qfeat )
+
+        def search():
+            def getData():
+                def getBbox():
+                    e = self.mapCanvas.extent()
+                    crs = self.mapCanvas.mapSettings().destinationCrs()
+                    if not self.CRS == crs:
+                        ct = QgsCoordinateTransform( crs, self.CRS, self.project )
+                        e = ct.transform( e )
+                    return [ e.xMinimum(), e.yMinimum(), e.xMaximum(), e.yMaximum() ]
+                    
+                v_datetime = f"{self.requestData['date1']}T00:00:00/{self.requestData['date2']}T00:00:00"
+                d_json = {
+                    'bbox': getBbox(),
+                    'collections': [ self.requestData['item_type'] ],
+                    'query': { "cloud_cover": {"lte": self.requestData['cloud_cover']} },
+                    'limit': self.LIMIT,
+                    'datetime': v_datetime
+                }
+                s_json = json.dumps( d_json )
+                return s_json.encode()
+
+            req = QgsBlockingNetworkRequest()
+            err = req.post( self.requestSearch, getData() )
+            if err > 0:
+                return { 'isOk': False, 'message': req.errorMessage() }
+            r = req.reply()
+            c = r.content()
+            d_json = json.loads( c.data() )
+            return { 'isOk': True, 'json': d_json }
+
+        self.message.emit( Qgis.Info, 'Request scenes in server' )
+        r = search()
+        if not r['isOk']:
+            self.message.emit( Qgis.Critical, r['message'] )
+            if existsCatalog: update()
+            return
+        data = r['json']
+        if len( data['features'] ) == 0:
+            self.message.emit( Qgis.Warning, 'Not found scenes' )
+            if existsCatalog: update()
+            return
+        addFeatures( data['features'] )
+        # Add/Update layer
+        if not existsCatalog:
+            self.project.addMapLayer( self.catalog, addToLegend=False )
+            self.layerTreeRoot.insertLayer( 0, self.catalog ).setCustomProperty('showFeatureCount', True)
+        else:
+            update()
 
     def init(self):
         self.message.emit( Qgis.Info, 'Checking server...')
@@ -249,25 +270,7 @@ class CatalogCbers4a(QObject):
             self.catalog.dataProvider().truncate() # Delete all features
             closeTableAttribute()
         
-        # Populate
-        r = self._search()
-        if not r['isOk']:
-            self.message.emit( Qgis.Critical, r['message'] )
-            if existsCatalog: update()
-            return
-        data = r['json']
-        if len( data['features'] ) == 0:
-            self.message.emit( Qgis.Warning, 'Not found scenes' )
-            if existsCatalog: update()
-            return
-        self._populate( data['features'] )
-
-        # Add/Update layer
-        if not existsCatalog:
-            self.project.addMapLayer( self.catalog, addToLegend=False )
-            self.layerTreeRoot.insertLayer( 0, self.catalog ).setCustomProperty('showFeatureCount', True)
-        else:
-            update()
+        self._populate( existsCatalog )
 
 
 # cc = CatalogCbers4a( iface )

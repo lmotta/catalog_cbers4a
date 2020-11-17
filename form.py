@@ -83,7 +83,7 @@ def populateForm(feature):
             widgets['thumbnail'].setPixmap( pixmap )
             printStatus()
 
-        printStatus('Fetching thumbnail...','blue')
+        printStatus('Fetching thumbnail...', 'blue')
         url = QUrl( f"{meta_json['assets']['thumbnail']['href']}" )
         request = QNetworkRequest( url )
         cf = QgsNetworkContentFetcherTask( request )
