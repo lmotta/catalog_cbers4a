@@ -41,7 +41,7 @@
       </size>
      </property>
      <property name="currentIndex">
-      <number>1</number>
+      <number>0</number>
      </property>
      <widget class="QWidget" name="tabItem">
       <attribute name="title">
@@ -181,7 +181,7 @@
           <bool>false</bool>
          </property>
          <property name="headerHidden">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
          <property name="columnCount">
           <number>2</number>

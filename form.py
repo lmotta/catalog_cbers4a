@@ -21,7 +21,11 @@ email                : motta.luiz@gmail.com
 """
 import json, os
 
-from qgis.PyQt.QtCore import Qt, pyqtSlot, QUrl
+from qgis.PyQt.QtCore import (
+    Qt,
+    pyqtSlot,
+    QUrl
+)
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.PyQt.QtWidgets import (
     QApplication,
@@ -30,7 +34,11 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtGui import QPixmap
 
-from qgis.core import QgsBlockingNetworkRequest, QgsEditFormConfig
+from qgis.core import (
+    QgsNetworkAccessManager,
+    QgsBlockingNetworkRequest,
+    QgsEditFormConfig
+)
 
 import qgis.utils as QgsUtils
 
@@ -57,19 +65,30 @@ def populateForm(feature):
     :param widgets: List of widgets
     :feature: Feature from open table(Form) in QGIS
     """
-    def getThumbnail(url):
-        url = QUrl( url )
+    def printStatus(message='', color='black'):
+        widgets['message_status'].setStyleSheet(f"color: {color}")
+        widgets['message_status'].setText( message )
+
+    def populateThumbnail():
+        def fetched():
+            r = QgsNetworkAccessManager.blockingGet( request )
+            if r is None:
+                printStatus( 'Invalid request', 'red' )
+                return
+            c = r.content()
+            pixmap = QPixmap()
+            if not pixmap.loadFromData( c.data() ):
+                printStatus( 'Invalid image from server', 'red' )
+                return
+            widgets['thumbnail'].setPixmap( pixmap )
+            printStatus()
+
+        printStatus('Fetching thumbnail...','blue')
+        url = QUrl( f"{meta_json['assets']['thumbnail']['href']}" )
         request = QNetworkRequest( url )
-        req = QgsBlockingNetworkRequest()
-        err = req.get( request)
-        if err > 0:
-            return { 'isOk': False, 'message': req.errorMessage() }
-        r = req.reply()
-        c = r.content()
-        pixmap = QPixmap()
-        if not pixmap.loadFromData( c.data() ):
-            return { 'isOk': False, 'message': 'Invalid image from server' }
-        return { 'isOk': True, 'pixmap': pixmap }
+        cf = QgsNetworkContentFetcherTask( request )
+        cf.fetched.connect( fetched )
+        cf.run()
 
     def fill_item(item, value):
         if not isinstance( value, ( dict, list ) ):
@@ -97,32 +116,22 @@ def populateForm(feature):
     meta_json = json.loads( feature['meta_json'] )
 
     # Clean
-    for name in ( 'message_status', 'message_clip'):
-        widgets[ name ].setStyleSheet('color: black')
-    widgets['message_status'].setText('')
+    printStatus()
     widgets['thumbnail'].setText('')
     msg = "* Double click copy item to clipboard. Inside 'key' item = Expression, otherwise, value"
+    widgets['message_clip'].setStyleSheet('color: black')
     widgets['message_clip'].setText( msg )
 
     # Populate 'item_id', 'date_time
     [ widgets[ name ].setText( feature[ name ] ) for name in ('item_id', 'date_time') ]
 
-    # Populate 'thumbnail'
-    widgets['message_status'].setText('Fetching thumbnail...')
-    url = f"{meta_json['assets']['thumbnail']['href']}"
-    r = getThumbnail( url )
-    if not r['isOk']:
-        widgets['message_status'].setText( r['message'] )
-        widgets['message_status'].setStyleSheet('color: red')
-        return
-    widgets['thumbnail'].setPixmap( r['pixmap'] )
-    widgets['message_status'].setText('')
-    
     # Populate Tree Metadata
     widgets['twMetadata'].clear()
     item = widgets['twMetadata'].invisibleRootItem()
     item.setDisabled( False )
     fill_item( item, meta_json )
+
+    populateThumbnail()
 
 def loadForm(dialog, layer, feature):
     @pyqtSlot('QTreeWidgetItem*', int)
