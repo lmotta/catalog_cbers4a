@@ -35,12 +35,11 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtGui import QPixmap
 
 from qgis.core import (
-    QgsNetworkAccessManager,
+    QgsApplication,
     QgsBlockingNetworkRequest,
+    QgsTask,
     QgsEditFormConfig
 )
-
-import qgis.utils as QgsUtils
 
 
 widgets = None
@@ -70,25 +69,32 @@ def populateForm(feature):
         widgets['message_status'].setText( message )
 
     def populateThumbnail():
-        def fetched():
-            r = QgsNetworkAccessManager.blockingGet( request )
-            if r is None:
-                printStatus( 'Invalid request', 'red' )
-                return
-            c = r.content()
+        def run(task, url):
+            # Request
+            bnr = QgsBlockingNetworkRequest()
+            err =  bnr.get( QNetworkRequest( url ) )
+            if err > 0:
+                return { 'isOk': False, 'message': bnr.errorMessage() }
+            # Get Result
+            data = bnr.reply().content().data()
             pixmap = QPixmap()
-            if not pixmap.loadFromData( c.data() ):
-                printStatus( 'Invalid image from server', 'red' )
+            pixmap.loadFromData( data )
+            return { 'isOk': True, 'thumbnail': pixmap }
+
+        def finished(exception, result=None):
+            if not exception is None:
+                printStatus(f"Exception '{exception}'", 'red')
                 return
-            widgets['thumbnail'].setPixmap( pixmap )
+            if not result['isOk']:
+                printStatus( result['message'], 'red')
+                return
+            widgets['thumbnail'].setPixmap( result['thumbnail'] )
             printStatus()
 
         printStatus('Fetching thumbnail...', 'blue')
         url = QUrl( f"{meta_json['assets']['thumbnail']['href']}" )
-        request = QNetworkRequest( url )
-        cf = QgsNetworkContentFetcherTask( request )
-        cf.fetched.connect( fetched )
-        cf.run()
+        task = QgsTask.fromFunction('Form Cbers4a Task', run, url, on_finished=finished )
+        QgsApplication.taskManager().addTask( task )
 
     def fill_item(item, value):
         if not isinstance( value, ( dict, list ) ):
