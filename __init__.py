@@ -64,9 +64,8 @@ class CatalogCbers4a(QObject):
     def unload(self):
         self.iface.removeToolBarIcon( self.action )
         self.iface.removePluginRasterMenu( self.name, self.action)
-        self.dock.writeSetting()
+        #self.dock.writeSetting()
         self.dock.close()
-        del self.dock
         self.dock = None
         del self.action
 

@@ -29,7 +29,8 @@ from qgis.PyQt.QtCore import (
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.PyQt.QtWidgets import (
     QApplication,
-    QLabel, QWidget,
+    QWidget, QLabel,
+    QScrollArea,
     QTreeWidget, QTreeWidgetItem
 )
 from qgis.PyQt.QtGui import QPixmap
@@ -88,7 +89,11 @@ def populateForm(feature):
             if not result['isOk']:
                 printStatus( result['message'], 'red')
                 return
-            widgets['thumbnail'].setPixmap( result['thumbnail'] )
+            
+            pixmap = result['thumbnail']
+            widgets['thumbnail'].setPixmap( pixmap )
+            size = widgets['thumbnail'].size()
+            widgets['thumbnail'].setPixmap( pixmap.scaled( size, Qt.KeepAspectRatio ) )
             printStatus()
 
         printStatus('Fetching thumbnail...', 'blue')
@@ -128,8 +133,8 @@ def populateForm(feature):
     widgets['message_clip'].setStyleSheet('color: black')
     widgets['message_clip'].setText( msg )
 
-    # Populate 'item_id', 'date_time
-    [ widgets[ name ].setText( feature[ name ] ) for name in ('item_id', 'date_time') ]
+    # Populate 'scene'
+    widgets['scene'].setText(f"{feature['item_id']} || {feature['date_time']}")
 
     # Populate Tree Metadata
     widgets['twMetadata'].clear()
@@ -173,21 +178,20 @@ def loadForm(dialog, layer, feature):
         widgets['message_clip'].setText( msg )
         widgets['message_clip'].setStyleSheet('color: blue')
 
-    global widgets
     if feature.fieldNameIndex('item_id') == -1:
         return
-
-    if widgets is None:
-        widgets = {
-            'item_id': dialog.findChild( QLabel, 'item_id'),
-            'date_time': dialog.findChild( QLabel, 'date_time'),
-            'thumbnail': dialog.findChild( QLabel, 'thumbnail'),
-            'tabMetadata': dialog.findChild( QWidget, 'tabMetadata'),
-            'message_clip': dialog.findChild( QLabel, 'message_clip'),
-            'message_status': dialog.findChild( QLabel, 'message_status')
-        }
-        widgets['twMetadata'] = widgets['tabMetadata'].findChild( QTreeWidget, 'twMetadata' )
-        widgets['twMetadata'].itemDoubleClicked.connect( itemDoubleClicked )
-        widgets['twMetadata'].setHeaderHidden( False )
-
+    # Thumbnail
+    # Metadata
+    wgtTab = dialog.findChild( QWidget, 'tabMetadata')
+    twMetadata = wgtTab.findChild( QTreeWidget, 'twMetadata' )
+    twMetadata.itemDoubleClicked.connect( itemDoubleClicked )
+    twMetadata.setHeaderHidden( False )
+    global widgets
+    widgets = {
+        'message_status': dialog.findChild( QLabel, 'message_status'),
+        'scene': dialog.findChild( QLabel, 'scene'),
+        'thumbnail': dialog.findChild( QLabel, 'thumbnail'),
+        'message_clip': dialog.findChild( QLabel, 'message_clip'),
+        'twMetadata': twMetadata
+    }
     populateForm( feature )
