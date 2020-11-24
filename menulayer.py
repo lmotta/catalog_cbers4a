@@ -5,7 +5,7 @@
 Name                 : Menu Layer
 Description          : Classes for add Menu in layer
 Date                 : November, 2020
-copyright            : (C) 2015 by Luiz Motta
+copyright            : (C) 2020 by Luiz Motta
 email                : motta.luiz@gmail.com
 
  ***************************************************************************/

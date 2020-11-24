@@ -1,3 +1,28 @@
+# -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+Name                 : Catalog Cbers4a
+Description          : This plugin lets you get the catalog of Cbers4a
+Date                 : December, 2020
+copyright            : (C) 2020 by Luiz Motta
+email                : motta.luiz@gmail.com
+
+ ***************************************************************************/
+
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+"""
+__author__ = 'Luiz Motta'
+__date__ = '2020-11-24'
+__copyright__ = '(C) 2020, Luiz Motta'
+__revision__ = '$Format:%H$'
+
 import json, os
 from collections import deque
 
@@ -116,7 +141,8 @@ class DockWidgetCbers4a(QDockWidget):
                 # Key
                 w = QgsPasswordLineEdit(wgt )
                 self.__dict__['email'] = w
-                w.setToolTip('Enter with key')
+                w.setPlaceholderText('someone@somewhere.com')
+                w.setToolTip('Email registered at http://www2.dgi.inpe.br/catalogo/explore')
                 w.setEchoMode( QLineEdit.Password )
                 rx = QRegularExpression(self.emailExpEdit, QRegularExpression.CaseInsensitiveOption )
                 w.setValidator( QRegularExpressionValidator( rx ) )
@@ -382,9 +408,8 @@ class CatalogCbers4a(QObject):
 
     def search(self, requestData):
         def closeTableAttribute():
-            layer_id = self.catalog_id
             widgets = QApplication.instance().allWidgets()
-            for tb in filter( lambda w: isinstance( w, QDialog ) and layer_id in w.objectName(),  widgets ):
+            for tb in filter( lambda w: isinstance( w, QDialog ) and self.catalog_id in w.objectName(),  widgets ):
                 tb.close()
 
         def setCustomPropertyCatalog():
@@ -487,9 +512,9 @@ class CatalogCbers4a(QObject):
                 if not existsCatalog:
                     self.project.addMapLayer( self.catalog, addToLegend=False )
                     self.layerTreeRoot.insertLayer( 0, self.catalog ).setCustomProperty('showFeatureCount', True)
-                    self.iface.setActiveLayer( self.catalog )
                 else:
                     update()
+                self.iface.setActiveLayer( self.catalog )
 
             def getUrlParams():
                 def getBbox():
@@ -528,17 +553,19 @@ class CatalogCbers4a(QObject):
             task.cancel()
             return
 
-        if self.initDownloads: return
+        if self.initDownloads:
+            self.message.emit('Downloading files, please wait.', Qgis.Warning )
+            return
 
         if self.iface.mapCanvas().layerCount() == 0:
-            msg = 'Need layer(s) in map'
-            self.message.emit( msg, Qgis.Critical )
+            self.message.emit('Need layer(s) in map', Qgis.Critical )
             return
 
         existsCatalog = not self.catalog is None and not self.project.mapLayer( self.catalog_id ) is None
         if not existsCatalog:
             create()            
         else:
+            self.catalog.removeSelection()
             self.catalog.dataProvider().truncate() # Delete all features
             closeTableAttribute()
         
@@ -600,13 +627,15 @@ class CatalogCbers4a(QObject):
         def download(path_download):
             def finishedDownload():
                 self.nextDownload.disconnect( download )
-                msg = "Download:"
-                if self.fileDownloadStatus['success'] + self.fileDownloadStatus['exists'] == 0:
-                    level = Qgis.Critical
-                elif self.fileDownloadStatus['cancelled']:
+                msg = "Download"
+                if self.fileDownloadStatus['cancelled']:
                     level = Qgis.Warning
-                    msg = f"Download(Cancelled by user):"
+                    msg = f"{msg}(Cancelled by user):"
+                elif self.fileDownloadStatus['success'] + self.fileDownloadStatus['exists'] == 0:
+                    msg = f"{msg}(no files):"
+                    level = Qgis.Critical
                 else:
+                    msg = f"{msg}:"
                     level = Qgis.Info
                 l = (
                     f"Exists ({self.fileDownloadStatus['exists']})",
@@ -691,9 +720,6 @@ class CatalogCbers4a(QObject):
             # r = task.run()
             # finished(None, r)
 
-        if self.initDownloads: return
-        self.initDownloads = True
-
         totalFeats = self.catalog.selectedFeatureCount()
         if totalFeats == 0:
             self.message.emit("Need select features", Qgis.Warning )
@@ -714,18 +740,22 @@ class CatalogCbers4a(QObject):
         self.fileDownloadStatus = { 'cancelled': False, 'error': 0, 'success': 0, 'exists': 0 }
         self.setDownloadFilesTotal( len( self.urlsDownload) ) # Progress Bar
         self.nextDownload.connect(  download ) # Recursive
+        #
+        if self.initDownloads: return
+        self.initDownloads = True
         download(p['path_download'])
-
-        if self.fileDownloadStatus['success'] + self.fileDownloadStatus['exists'] > 0:
-            if layersStack:
-                bands_stack = [ 'red', 'green', 'blue' ]
-                total = 0
-                for b in bands_stack: total += p['bands'].count( b )
-                if total == 3:
-                    for b in p['bands']:
-                        if bands_stack .count( b ) == 0: bands_stack.append( b )
-                    addCanvasLayersStack( layersStack, p['path_download'], bands_stack )
-                else:
-                    addCanvasLayersStack( layersStack, p['path_download'], p['bands'] )
-
         self.initDownloads = False
+        # Add Stack VRT
+        existsFiles = self.fileDownloadStatus['success'] + self.fileDownloadStatus['exists'] > 0
+        if not layersStack or self.fileDownloadStatus['cancelled'] or not existsFiles: return
+        bands_stack = [ 'red', 'green', 'blue' ]
+        total = 0
+        for b in bands_stack: total += p['bands'].count( b )
+        if total == 3:
+            for b in p['bands']:
+                if bands_stack .count( b ) == 0: bands_stack.append( b )
+            addCanvasLayersStack( layersStack, p['path_download'], bands_stack )
+        else:
+            addCanvasLayersStack( layersStack, p['path_download'], p['bands'] )
+
+        

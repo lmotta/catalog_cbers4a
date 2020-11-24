@@ -5,7 +5,7 @@
 Name                 : Progress Bar 
 Description          : Class for file progress bar with  cancel
 Date                 : November, 2020
-copyright            : (C) 2019 by Luiz Motta
+copyright            : (C) 2020 by Luiz Motta
 email                : motta.luiz@gmail.com
 
  ***************************************************************************/

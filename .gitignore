@@ -3,6 +3,6 @@
 *.pyc
 *.zip
 *.sh
+__pycache__
 # Not Ignore
 !create_zip_plugin.sh
-
