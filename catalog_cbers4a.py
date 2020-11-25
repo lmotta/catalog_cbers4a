@@ -406,9 +406,16 @@ class CatalogCbers4a(QObject):
             self.fileDownload.cancelDownload()
 
     def search(self, requestData):
-        def closeTableAttribute():
-            widgets = QApplication.instance().allWidgets()
-            for tb in filter( lambda w: isinstance( w, QDialog ) and self.idCatalog in w.objectName(),  widgets ):
+        def getLayerCatalog(asset):
+            isCatalog = lambda l: l.type() == QgsMapLayerType.VectorLayer and l.customProperty('asset') == asset
+            for ltl in self.layerTreeRoot.findLayers():
+                layer = ltl.layer()
+                if isCatalog( layer ): return layer
+            return None
+
+        def closeTableAttribute(id_object):
+            widgets = QApplication.instance().activeWindow().findChildren(QDialog)
+            for tb in [ w for w in widgets if id_object in w.objectName() ]:
                 tb.close()
 
         def getNameCatalog():
@@ -434,7 +441,7 @@ class CatalogCbers4a(QObject):
             self.menuCatalog.setLayer( layer )
             return layer
 
-        def populate(layer):
+        def populate(layer, exists):
             def fetched():
                 def addFeatures(json_features):
                     def getGeometry(json_geometry):
@@ -478,6 +485,10 @@ class CatalogCbers4a(QObject):
                         provider.addFeature( qfeat )
                     layer.updateExtents()
 
+                def updateShowFeatureCount():
+                    ltl = self.layerTreeRoot.findLayer( layer.id() )
+                    for b in (False, True): ltl.setCustomProperty('showFeatureCount', b)
+
                 self.changeIconSearch('apply')
                 self.taskId = None
                 s_json = task.contentAsString()
@@ -497,9 +508,12 @@ class CatalogCbers4a(QObject):
                 
                 self.message.emit(f"Found {total} scenes", Qgis.Info)
                 addFeatures( d_json['features'] )
+                if not exists:
+                    self.project.addMapLayer( layer, addToLegend=False )
+                    self.layerTreeRoot.insertLayer( 0, layer ).setCustomProperty('showFeatureCount', True)
+                else:
+                    updateShowFeatureCount()
 
-                self.project.addMapLayer( layer, addToLegend=False )
-                self.layerTreeRoot.insertLayer( 0, layer ).setCustomProperty('showFeatureCount', True)
                 self.iface.setActiveLayer( layer )
 
             def getUrlParams():
@@ -544,9 +558,17 @@ class CatalogCbers4a(QObject):
             self.message.emit('Need layer(s) in map', Qgis.Critical )
             return
 
-        layer = create()            
+        layer = getLayerCatalog( requestData['asset'] )
+        if layer:
+            closeTableAttribute( layer.id() )
+            layer.dataProvider().truncate()
+            layer.setName( getNameCatalog() )
+            exists = True
+        else:
+            layer = create()
+            exists = False
         self.message.emit('Searching scenes...', Qgis.Info)
-        populate( layer )
+        populate( layer, exists )
 
     def actionsForm(self, nameAction, feature_id=None):
         """
@@ -575,7 +597,7 @@ class CatalogCbers4a(QObject):
 
     def addXYZtiles(self):
         layerCatalog = self.iface.activeLayer()
-        self.message.emit("Missing implemetation 'addXYZtiles'", Qgis.Info )
+        self.message.emit("Missing implemetation 'addXYZtiles'", Qgis.Warning )
 
     def downloadImages(self):
         def populateUrls(layerCatalog, asset, key, bands):
