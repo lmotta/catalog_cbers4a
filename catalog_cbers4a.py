@@ -101,7 +101,7 @@ class DockWidgetCbers4a(QDockWidget):
                 # Dates
                 lyt = QHBoxLayout()
                 self.__dict__['fromDate'] = createDateEdit( 'From', lyt, 'yyyy-MM-dd', True, wgt )
-                self.__dict__['toDate'] = createDateEdit( 'From', lyt, 'yyyy-MM-dd', True, wgt )
+                self.__dict__['toDate'] = createDateEdit( 'To', lyt, 'yyyy-MM-dd', True, wgt )
                 layout.addLayout( lyt )
                 # Days
                 w = QSpinBox( wgt )
@@ -147,7 +147,7 @@ class DockWidgetCbers4a(QDockWidget):
                 rx = QRegularExpression(self.emailExpEdit, QRegularExpression.CaseInsensitiveOption )
                 w.setValidator( QRegularExpressionValidator( rx ) )
                 layout.addWidget( w )
-                w = QPushButton('Clear register key', wgt )
+                w = QPushButton('Clear register', wgt )
                 w.clicked.connect( self._onClearKey )
                 layout.addWidget( w )
                 # Spacer
@@ -250,8 +250,8 @@ class DockWidgetCbers4a(QDockWidget):
                 params['path'] = None
             return params
 
-        super().__init__(self.TITLE, iface.mainWindow() )
-        self.setObjectName(f"{self.TITLE}_catalogcbers4a_dockwidget")
+        super().__init__(f"{self.TITLE} Catalog", iface.mainWindow() )
+        self.setObjectName(f"{self.TITLE}_dockwidget")
         self.emailExpEdit = '\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,4}\\b'
         self.emailExpMath = r"(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)"
         self.icons = getIcons()
