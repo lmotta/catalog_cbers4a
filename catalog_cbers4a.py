@@ -414,7 +414,7 @@ class CatalogCbers4a(QObject):
             return None
 
         def closeTableAttribute(id_object):
-            widgets = QApplication.instance().activeWindow().findChildren(QDialog)
+            widgets = QApplication.instance().allWidgets()
             for tb in [ w for w in widgets if id_object in w.objectName() ]:
                 tb.close()
 
