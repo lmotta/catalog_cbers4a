@@ -383,7 +383,6 @@ class CatalogCbers4a(QObject):
         }
         self.menuCatalog = MenuCatalog( DockWidgetCbers4a.TITLE, funcActions)
 
-        self.catalog, self.catalog_id = None, None
         self.taskId = None
 
         iface.currentLayerChanged.connect( self.changedLayer )
@@ -409,41 +408,34 @@ class CatalogCbers4a(QObject):
     def search(self, requestData):
         def closeTableAttribute():
             widgets = QApplication.instance().allWidgets()
-            for tb in filter( lambda w: isinstance( w, QDialog ) and self.catalog_id in w.objectName(),  widgets ):
+            for tb in filter( lambda w: isinstance( w, QDialog ) and self.idCatalog in w.objectName(),  widgets ):
                 tb.close()
-
-        def setCustomPropertyCatalog():
-            self.catalog.setCustomProperty('asset', requestData['asset'] )
-            self.catalog.setCustomProperty('fromDate', requestData['fromDate'] )
-            self.catalog.setCustomProperty('toDate', requestData['toDate'] )
 
         def getNameCatalog():
             arg = ( requestData['asset'], requestData['fromDate'], requestData['toDate'] )
             return self.FORMAT_NAME.format( *arg )
 
         def create():
+            def setCustomPropertyCatalog(layer):
+                for key in ( 'asset', 'fromDate', 'toDate' ):
+                    layer.setCustomProperty( key, requestData[ key] )
+                layer.setCustomProperty("skipMemoryLayersCheck", 1 )
+                layer.setCustomProperty('showFeatureCount', True )
+
             l_fields = [ f"field={k}:{v}" for k,v in self.FIELDSDEF.items() ]
             l_fields.insert( 0, f"Multipolygon?crs={self.CRS.authid().lower()}" )
             l_fields.append( "index=yes" )
             uri = '&'.join( l_fields )
             name = getNameCatalog()
-            self.catalog = QgsVectorLayer( uri, name, 'memory' )
-            self.catalog.loadNamedStyle( self.styleFile )
-            setCustomPropertyCatalog()
-            FORM_setForm( self.catalog )
-            self.menuCatalog.setLayer( self.catalog )
-            self.catalog_id = self.catalog.id()
+            layer = QgsVectorLayer( uri, name, 'memory' )
+            layer.loadNamedStyle( self.styleFile )
+            setCustomPropertyCatalog( layer )
+            FORM_setForm( layer )
+            self.menuCatalog.setLayer( layer )
+            return layer
 
-        def populate():
+        def populate(layer):
             def fetched():
-                def update():
-                    name = getNameCatalog()
-                    self.catalog.setName( name )
-                    setCustomPropertyCatalog()
-                    self.catalog.triggerRepaint()
-                    ltl = self.layerTreeRoot.findLayer( self.catalog_id )
-                    for b in ( False, True ): ltl.setCustomProperty('showFeatureCount', b )
-
                 def addFeatures(json_features):
                     def getGeometry(json_geometry):
                         def getPolygonPoints(coordinates):
@@ -465,7 +457,7 @@ class CatalogCbers4a(QObject):
                         else:
                             None
 
-                    provider = self.catalog.dataProvider()
+                    provider = layer.dataProvider()
                     for feat in json_features:
                         f =  { }
                         f['item_id'] = feat['id']
@@ -484,37 +476,31 @@ class CatalogCbers4a(QObject):
                         g = getGeometry( feat['geometry'])
                         if not g is None: qfeat.setGeometry( g )
                         provider.addFeature( qfeat )
+                    layer.updateExtents()
 
                 self.changeIconSearch('apply')
                 self.taskId = None
                 s_json = task.contentAsString()
                 if not s_json:
                     self.message.emit('Canceled by user', Qgis.Warning )
-                    if existsCatalog: update()
                     return
                 d_json = json.loads(  s_json )
                 if not 'features' in d_json:
                     msg = f"Error '{self.URLS['search']}': {s_json}"
                     self.message.emit( msg, Qgis.Critical )
-                    if existsCatalog: update()
                     return
 
                 total = len( d_json['features'] )
                 if total == 0:
                     self.message.emit('Not found scenes', Qgis.Warning )
-                    if existsCatalog: update()
                     return
                 
                 self.message.emit(f"Found {total} scenes", Qgis.Info)
                 addFeatures( d_json['features'] )
 
-                # Add/Update layer
-                if not existsCatalog:
-                    self.project.addMapLayer( self.catalog, addToLegend=False )
-                    self.layerTreeRoot.insertLayer( 0, self.catalog ).setCustomProperty('showFeatureCount', True)
-                else:
-                    update()
-                self.iface.setActiveLayer( self.catalog )
+                self.project.addMapLayer( layer, addToLegend=False )
+                self.layerTreeRoot.insertLayer( 0, layer ).setCustomProperty('showFeatureCount', True)
+                self.iface.setActiveLayer( layer )
 
             def getUrlParams():
                 def getBbox():
@@ -543,9 +529,6 @@ class CatalogCbers4a(QObject):
             self.changeIconSearch('cancel')
             task = QgsNetworkContentFetcherTask( getUrlParams() )
             task.fetched.connect( fetched )
-            existsCatalog = not self.catalog is None and not self.project.mapLayer( self.catalog_id ) is None
-            if existsCatalog:
-                task.setDependentLayers( [ self.catalog ] )
             self.taskId = self.taskManager.addTask( task )
 
         if self.taskId:
@@ -561,16 +544,9 @@ class CatalogCbers4a(QObject):
             self.message.emit('Need layer(s) in map', Qgis.Critical )
             return
 
-        existsCatalog = not self.catalog is None and not self.project.mapLayer( self.catalog_id ) is None
-        if not existsCatalog:
-            create()            
-        else:
-            self.catalog.removeSelection()
-            self.catalog.dataProvider().truncate() # Delete all features
-            closeTableAttribute()
-        
+        layer = create()            
         self.message.emit('Searching scenes...', Qgis.Info)
-        populate()
+        populate( layer )
 
     def actionsForm(self, nameAction, feature_id=None):
         """
@@ -598,10 +574,11 @@ class CatalogCbers4a(QObject):
         return actionsFunc[ nameAction ]( feature_id )
 
     def addXYZtiles(self):
+        layerCatalog = self.iface.activeLayer()
         self.message.emit("Missing implemetation 'addXYZtiles'", Qgis.Info )
 
     def downloadImages(self):
-        def populateUrls(asset, key, bands):
+        def populateUrls(layerCatalog, asset, key, bands):
             def addUrls(item_id, band, url):
                 d = {
                     'band': band,
@@ -616,7 +593,7 @@ class CatalogCbers4a(QObject):
                 bands.remove('_xml')
 
             self.urlsDownload.clear()
-            for feat in self.catalog.getSelectedFeatures():
+            for feat in layerCatalog.getSelectedFeatures():
                 d = json.loads( feat['meta_json'] )
                 for b in bands:
                     url = d['assets'][ b ]['href']
@@ -720,7 +697,12 @@ class CatalogCbers4a(QObject):
             # r = task.run()
             # finished(None, r)
 
-        totalFeats = self.catalog.selectedFeatureCount()
+        if self.initDownloads:
+            self.message.emit('Downloading files, please wait.', Qgis.Warning )
+            return
+
+        lyr = self.iface.activeLayer()
+        totalFeats = lyr.selectedFeatureCount()
         if totalFeats == 0:
             self.message.emit("Need select features", Qgis.Warning )
             return
@@ -732,16 +714,15 @@ class CatalogCbers4a(QObject):
             self.message.emit('Key is not valid', Qgis.Warning )
             return
 
-        populateUrls( p['asset'], p['key']['value'], p['bands'] )
+        populateUrls( lyr, p['asset'], p['key']['value'], p['bands'] )
         layersStack = None
         if len( p['bands'] ) > 1:
-            layersStack = getLayersStack( p['path_download'] )
+            layersStack = getLayersStack( p['path_download'] ) # { 'image_id': { 'band': filepath, ...}, ..., }
         # Downloads
         self.fileDownloadStatus = { 'cancelled': False, 'error': 0, 'success': 0, 'exists': 0 }
         self.setDownloadFilesTotal( len( self.urlsDownload) ) # Progress Bar
         self.nextDownload.connect(  download ) # Recursive
         #
-        if self.initDownloads: return
         self.initDownloads = True
         download(p['path_download'])
         self.initDownloads = False
